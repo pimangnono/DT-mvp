@@ -1,0 +1,14 @@
+[
+  {
+    "agent_id": "Moonbeam Co",
+    "vision_statement": "Committed to creating social and environmental good through food production.",
+    "business_model": "a food manufacturer that upcycles byproducts like coffee grounds and spent grain into baked goods to replace flour. Its primary business involves supplying these sustainable products to food service companies and retailers.",
+    "initial_status": {
+      "cash_flow": 40, "short_term_debt_coverage": 60, "working_capital": 50,
+      "profit_margin": 55, "market_share": 30, "revenue_consistency": 65,
+      "roi": 45, "productivity": 50, "entry_into_new_market": 20,
+      "brand_recognition": 70, "esg_performance": 60, "customer_satisfaction": 75,
+      "vision_alignment_score": 80, "long_term_sustainability": 70
+    }
+  }
+]

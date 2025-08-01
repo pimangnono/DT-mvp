@@ -1,0 +1,63 @@
+{
+  "name": "Wheat Price Rise Due to War",
+  "description": "A scenario simulating the impact of a geopolitical conflict that disrupts the global wheat supply, causing price hikes and shifting demand towards products with more resilient supply chains.",
+  "duration_steps": 5,
+  "global_factors": {
+    "initial": {
+      "description": "A stable market with typical commodity price fluctuations and underlying geopolitical tensions.",
+      "effects": {
+        "profit_margin": -5,
+        "revenue_consistency": -5
+      }
+    }
+  },
+  "timed_events": [
+    {
+      "trigger_step": 2,
+      "name": "Geopolitical Conflict Erupts",
+      "description": "A war in a major wheat-exporting region creates immediate supply chain uncertainty and market jitters.",
+      "effects": [
+        {
+          "target": "all",
+          "metric": "working_capital",
+          "modifier": -15,
+          "message": "Market uncertainty is forcing us to tie up more cash in securing raw material inventory."
+        }
+      ]
+    },
+    {
+      "trigger_step": 4,
+      "name": "Wheat Prices Skyrocket",
+      "description": "The conflict has severely disrupted wheat exports, causing a massive spike in the price of flour and other core ingredients.",
+      "effects": [
+        {
+          "target": "all",
+          "metric": "profit_margin",
+          "modifier": -30,
+          "message": "The soaring cost of wheat has drastically reduced our profit margins."
+        },
+        {
+          "target": "all",
+          "metric": "cash_flow",
+          "modifier": -20,
+          "message": "Significantly higher raw material costs are straining our cash reserves."
+        }
+      ]
+    },
+    {
+      "trigger_step": 5,
+      "name": "Market Seeks Alternatives",
+      "description": "With persistently high wheat prices, clients and consumers begin favoring products made with innovative, non-wheat-based, and more cost-stable ingredients.",
+      "effects": [
+        {
+          "target": "all_conditional",
+          "condition_metric": "vision_alignment_score",
+          "condition_threshold": 85,
+          "metric": "market_share",
+          "modifier": 20,
+          "message": "Our innovative use of alternative ingredients is a key advantage, attracting customers seeking price stability!"
+        }
+      ]
+    }
+  ]
+}
