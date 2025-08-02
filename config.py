@@ -7,6 +7,6 @@ import os
 SIMULATION_STEPS = 5
 
 # LLM Configuration
-LLM_MODEL_NAME = "gemini-2.5-pro"
+LLM_MODEL_NAME = "gemini-2.5-flash"
 
 LLM_MAX_RETRIES = 3

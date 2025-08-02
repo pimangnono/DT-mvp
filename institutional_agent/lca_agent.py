@@ -1,83 +1,101 @@
 # institutional_agent/lca_agent.py
-"""
-The LCAAgent is a specialized service agent that uses an LLM to dynamically
-calculate the carbon footprint of actions taken by other agents.
-It caches results to improve performance and reduce costs.
-focus on searching for data produced by Industrial Ecologist who use LCA to produce data in guiding production and consumption (full value chain) in order to minimize waste genereation and optimize resource usage/consumption
-"""
-from . import llm_interface # Use relative import
+from . import llm_interface
 
 class LCAAgent:
     def __init__(self, llm_client):
-        """
-        Initializes the LCA Agent.
-
-        Args:
-            llm_client: The configured Google LLM client for making API calls.
-        """
         self.agent_id = "LCA_Auditor_Agent"
         self.llm_client = llm_client
         self.total_footprint_kg_co2e = 0
-        self.cache = {}  # Cache to store LCA data: {(stage, activity): data}
-        print(f"Agent '{self.agent_id}' initialized with LLM and an empty cache.")
+        self.cache = {}
+        print(f"Agent '{self.agent_id}' initialized with advanced standardization logic.")
 
-    def _get_emission_factor(self, stage, activity):
+    def _get_standardized_emission_factor(self, stage, activity, target_functional_unit='kg'):
         """
-        Retrieves emission factor data, using the cache first.
-        If not in cache, it calls the LLM to fetch the data.
+        Retrieves and fully standardizes an emission factor to a target functional unit.
+        This now handles both emission unit and functional unit conversion.
         """
-        cache_key = (stage, activity)
+        cache_key = (stage, activity, target_functional_unit)
         if cache_key in self.cache:
-            print(f"LCA_Auditor: Found '{activity}' in cache. Using cached data.")
+            print(f"LCA_Auditor: Found fully standardized data for '{activity}' in cache.")
             return self.cache[cache_key]
-        
-        print(f"LCA_Auditor: '{activity}' not in cache. Querying LLM...")
-        # Not in cache, so we call the LLM interface function
-        lca_data = llm_interface.fetch_lca_data_from_llm(
-            self.llm_client, stage, activity
-        )
-        
-        # Store the new result in the cache for future use
-        self.cache[cache_key] = lca_data
-        print(f"LCA_Auditor: Received data from LLM and updated cache. Source: {lca_data.get('source')}")
-        return lca_data
 
-    def process_action_message(self, acting_agent_id, message):
-        """
-        Processes an action message, calculates footprint using dynamic data,
-        and reports the results.
-        """
-        if not message:
-            return
+        print(f"LCA_Auditor: No standardized data for '{activity}' per '{target_functional_unit}'. Beginning research...")
+        
+        # 1. Fetch the raw LCA data for the activity
+        raw_lca_data = llm_interface.fetch_lca_data_from_llm(self.llm_client, stage, activity)
+        if not raw_lca_data:
+            print(f"LCA_Auditor: Initial research for '{activity}' failed.")
+            return None
+
+        # 2. Standardize the EMISSION unit (e.g., convert 'ton CO2e' to 'kg CO2e')
+        emissions_per_unit = raw_lca_data.get('emissions_per_unit', 0)
+        emission_unit_str = raw_lca_data.get('emission_unit', 'kg co2e').lower()
+        emission_factor = 1.0
+        if "ton" in emission_unit_str: emission_factor = 1000.0
+        elif "g" in emission_unit_str and "kg" not in emission_unit_str: emission_factor = 0.001
+        standardized_emissions = emissions_per_unit * emission_factor
+        
+        # 3. Standardize the FUNCTIONAL unit (e.g., convert 'per ton' to 'per kg')
+        original_functional_unit = raw_lca_data.get('input_unit', 'unit').lower()
+        final_emissions_per_target_unit = standardized_emissions
+
+        # If the original unit doesn't match our target, we need to ask the LLM for a conversion
+        if original_functional_unit != target_functional_unit:
+            print(f"LCA_Auditor: Functional unit mismatch ('{original_functional_unit}' vs target '{target_functional_unit}'). Requesting conversion factor...")
+            conversion_factor = llm_interface.get_unit_conversion_factor(self.llm_client, original_functional_unit, target_functional_unit)
             
+            if conversion_factor:
+                # Example: If original is 'ton' and target is 'kg', conversion factor is 1000.
+                # To get emissions per kg, we must DIVIDE emissions per ton by 1000.
+                final_emissions_per_target_unit = standardized_emissions / conversion_factor
+                print(f"LCA_Auditor: Conversion successful. Factor: {conversion_factor}.")
+            else:
+                print(f"LCA_Auditor: Could not get a conversion factor. Analysis for this item may be inaccurate.")
+        
+        # 4. Cache and return the fully standardized data
+        final_data = {
+            "standardized_footprint": final_emissions_per_target_unit,
+            "standardized_unit": f"kg CO2e / {target_functional_unit}",
+            "source": raw_lca_data.get('source', 'Unknown')
+        }
+        self.cache[cache_key] = final_data
+        return final_data
+
+    def process_action_message(self, message, acting_agent_id="Unknown"):
+        if not message: return
         print(f"\n--- {self.agent_id} received a message from {acting_agent_id} ---")
         print(f"Action details: {message}")
 
         stage = message.get("stage")
         activity = message.get("activity")
         amount = message.get("amount", 0)
+        # The agent's action message should specify the unit of the amount
+        amount_unit = message.get("unit", "kg").lower() 
 
-        if not stage or not activity:
-            print("Warning: Message is missing 'stage' or 'activity'. Cannot process.")
-            return
+        if not stage or not activity: return
 
         try:
-            # This now dynamically fetches data (or uses cache)
-            factor_data = self._get_emission_factor(stage, activity)
+            # We always standardize to 'kg' for the functional unit for consistency
+            standardized_data = self._get_standardized_emission_factor(stage, activity, target_functional_unit='kg')
             
-            unit = factor_data["unit"]
-            emissions_per_unit = factor_data["emissions_kg_co2e_per_unit"]
+            if not standardized_data:
+                print("LCA_Auditor: Research failed. No footprint calculated.")
+                return
+
+            # If the amount from the action is not in kg, we must convert it first
+            final_amount_in_kg = amount
+            if amount_unit != 'kg':
+                conversion_factor = llm_interface.get_unit_conversion_factor(self.llm_client, amount_unit, 'kg')
+                if conversion_factor:
+                    final_amount_in_kg = amount * conversion_factor
+                else:
+                    print(f"Warning: Could not convert amount from '{amount_unit}' to kg. Assuming 1:1.")
             
-            # Special handling for distribution (e.g., 'ton-km')
-            if "km" in unit or "mi" in unit:
-                distance = message.get("distance_km", 1)
-                footprint = amount * distance * emissions_per_unit
-            else:
-                footprint = amount * emissions_per_unit
+            emissions_per_kg = standardized_data.get("standardized_footprint", 0)
+            footprint = final_amount_in_kg * emissions_per_kg
             
-            print(f"Calculated Footprint: {footprint:,.2f} kg CO2e (Based on {emissions_per_unit} kg/{unit})")
+            print(f"LCA CALCULATION: {final_amount_in_kg:,.2f} kg * {emissions_per_kg:,.2f} (kg CO2e / kg) = {footprint:,.2f} kg CO2e")
             self.total_footprint_kg_co2e += footprint
             print(f"Total Simulation Footprint so far: {self.total_footprint_kg_co2e:,.2f} kg CO2e")
-
         except Exception as e:
             print(f"Error calculating footprint for message {message}: {e}")

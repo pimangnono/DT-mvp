@@ -1,0 +1,37 @@
+{
+  "name": "Global Wheat Supply Disruption",
+  "description": "A scenario where a major geopolitical conflict disrupts global grain shipments, causing a massive price spike for imported flour affecting Singapore.",
+  "duration_steps": 4,
+  "material_prices": {
+    "initial": {
+      "imported_wheat_flour": 100.0,
+      "upcycled_sg_ingredients": 130.0
+    }
+  },
+  "timed_events": [
+    {
+      "trigger_step": 1,
+      "name": "Global Grain Export Ban",
+      "description": "A major grain-exporting region announces an export ban to protect its domestic supply, causing global flour prices to skyrocket.",
+      "effects": [
+        {
+          "type": "price_change",
+          "material": "imported_wheat_flour",
+          "change_percent": 400.0
+        }
+      ]
+    },
+    {
+      "trigger_step": 2,
+      "name": "Singapore Carbon Tax Increase",
+      "description": "The planned national carbon tax increases, impacting operational costs based on total emissions.",
+      "effects": [
+        {
+          "type": "carbon_tax",
+          "tax_rate_per_ton_co2e": 40.0,
+          "message": "The increased carbon tax is now in effect."
+        }
+      ]
+    }
+  ]
+}

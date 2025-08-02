@@ -46,6 +46,83 @@ def _call_llm_with_retry(llm_client, prompt, function_name="LLM Call"):
                 return None # Return None after all retries fail
     return None
 
+# --- 0. Ecosystem SETUP ---
+
+def generate_agent_profile_from_concept(llm_client, economy_type, agent_concept):
+    """
+    Takes a simple agent concept (name and business model) and asks the LLM
+    to generate a complete, structured JSON profile for it.
+    """
+    agent_id = agent_concept.get('agent_id', 'Unknown Agent')
+    business_model = agent_concept.get('business_model', 'N/A')
+
+    if economy_type == 'Linear':
+        example_supply_chain = '{ "model_type": "linear", "material_mix": { "imported_wheat_flour": 1.0 } }'
+    else: # Circular
+        example_supply_chain = '{ "model_type": "circular", "material_mix": { "upcycled_sg_ingredients": 1.0 } }'
+
+    prompt = f"""
+    You are a data entry specialist and economic modeler. Your task is to create a complete JSON data profile for a specific business entity.
+
+    **Entity Details:**
+    - **Agent ID:** "{agent_id}"
+    - **Business Model:** "{business_model}"
+    - **Overarching Economy:** "{economy_type}"
+
+    **Instructions:**
+    1.  Based on the entity details, create a single, complete JSON object representing this agent's full profile.
+    2.  The JSON object MUST contain these exact top-level keys: "agent_id", "vision_statement", "business_model", "supply_chain", and "initial_status".
+    3.  The "supply_chain" value MUST be a nested JSON object structured exactly like this: {example_supply_chain}.
+    4.  The "initial_status" value MUST be a nested JSON object containing a full set of reasonable default metrics (e.g., "cash_flow": 50, "profit_margin": 50, etc.).
+    5.  Your entire response MUST BE just the raw JSON object, starting with '{{' and ending with '}}'. Do not add any other text.
+    """
+    response_text = _call_llm_with_retry(llm_client, prompt, f"generate_profile_for_{agent_id}")
+    if response_text:
+        profile = _extract_json_from_llm_response(response_text)
+        if isinstance(profile, dict) and "agent_id" in profile:
+            return profile
+    print(f"LLM Failure: Could not generate a valid profile for concept '{agent_id}'.")
+    return None
+
+# llm_interface.py
+
+def generate_ecosystem_concepts_with_llm(llm_client, economy_type, core_business_model):
+    """
+    Asks the LLM to brainstorm a list of plausible agent CONCEPTS (name and business model only).
+    This is the 'Ideation' step.
+    """
+    prompt = f"""
+    You are an expert economic planner for Singapore. Your task is to brainstorm a list of 2 other essential entities that would exist in an economic ecosystem.
+
+    **Core Economic Model:** A "{economy_type}" Economy.
+    **Central Business Type:** "{core_business_model}"
+
+    **Instructions:**
+    1.  Brainstorm a list of agent concepts. This MUST include one **supplier** and one **government/regulatory body**.
+    2.  For each concept, provide a JSON object with only two keys: "agent_id" and "business_model".
+    3.  The concepts MUST align with the overarching **{economy_type}** model.
+    4.  Respond with ONLY a Python-parseable list of these simple JSON objects. Your response MUST start with '[' and end with ']'.
+
+    **Example Response for a 'Circular' bakery:**
+    [
+      {{
+        "agent_id": "Okara_Upcycling_Coop",
+        "business_model": "A co-operative that collects okara (soy pulp) from tofu producers and processes it into a high-protein flour for bakeries."
+      }},
+      {{
+        "agent_id": "SFA_Circular_Grants_Office",
+        "business_model": "A government agency under the Singapore Food Agency that provides grants and regulatory support for businesses using upcycled ingredients."
+      }}
+    ]
+    """
+    response_text = _call_llm_with_retry(llm_client, prompt, "generate_ecosystem_concepts")
+    if response_text:
+        concepts = _extract_json_from_llm_response(response_text)
+        if isinstance(concepts, list):
+            return concepts
+    print("LLM Failure: Could not generate ecosystem concepts.")
+    return []
+
 # --- 1. CORE SETUP ---
 def configure_llm():
     """Configures and returns the generative model client."""
@@ -109,49 +186,49 @@ def analyze_event_impact_with_llm(llm_client, agent_profile_summary, event_descr
 
 # --- 3. INSTITUTIONAL AGENT - ACTION & DECISION MAKING ---
 def decompose_strategy_into_actions(llm_client, strategy, agent_profile):
-    """Takes a high-level strategy and breaks it down into a list of projects."""
+    """Takes a high-level strategy and breaks it down into projects relevant to a Singaporean bakery."""
     prompt = f"""
-    You are a Chief Operating Officer (COO) for a specific company.
+    You are the Chief Operating Officer for a Singapore-based bakery.
 
     Our Company Profile:
     - Vision: "{agent_profile.static_status['vision_statement']}"
     - Business Model: "{agent_profile.static_status['business_model']}"
 
-    Your task is to take a high-level strategic objective and break it down into a list of 2-3 specific, tangible projects that are RELEVANT TO OUR BUSINESS MODEL.
+    Your task is to take a high-level strategic objective and break it down into 2-3 specific, tangible projects that a real bakery in Singapore would execute.
 
     Strategic Objective: "{strategy}"
 
     Instructions:
-    1.  Brainstorm concrete projects that a company like ours would execute.
+    1.  Brainstorm concrete projects relevant to a bakery's operations (e.g., sourcing, production, energy, waste).
     2.  For each project, create a JSON object for our Life Cycle Assessment (LCA) system.
-    3.  YOU MUST respond with ONLY a raw, valid, Python-parseable list of JSON objects.
-    4.  DO NOT include any explanations, introductory text, or markdown formatting like ```json. Your entire response must start with '[' and end with ']'.
+    3.  Your entire response MUST BE just a raw, valid, Python-parseable list of JSON objects, starting with '[' and ending with ']'. Do not add any other text.
+    4.  The nested 'lca_message' object must have the keys "stage", "activity", "amount", and "unit".
 
-    Example Response for a software company with the strategy "Launch a resource efficiency program":
+    Example for the strategy "Improve resource efficiency":
     [
       {{
-        "project_name": "Upgrade Data Center Cooling to Liquid Immersion",
-        "rationale": "Dramatically reduces electricity consumption (PUE), our primary resource usage.",
+        "project_name": "Install new deck ovens with better heat retention",
+        "rationale": "Reduces electricity consumption per bake cycle, lowering operational costs, our primary resource usage.",
         "lca_message": {{
-          "stage": "infrastructure",
-          "activity": "data_center_retrofit",
-          "amount": 500,
-          "unit_hint": "servers"
+          "stage": "capital_goods",
+          "activity": "commercial_oven_manufacturing",
+          "amount": 5,
+          "unit": "ovens"
         }}
       }},
       {{
-        "project_name": "Implement a 'Work from Home' policy to reduce office energy footprint",
-        "rationale": "Reduces commuter emissions and office energy/water consumption.",
+        "project_name": "Implement a water recycling system for washing equipment",
+        "rationale": "Reduces water utility costs, a key concern in Singapore.",
         "lca_message": {{
-          "stage": "operations",
-          "activity": "policy_implementation",
+          "stage": "infrastructure",
+          "activity": "water_recycling_system_installation",
           "amount": 1,
-          "unit_hint": "policy"
+          "unit": "system"
         }}
       }}
     ]
 
-    Now, provide the list of JSON objects for our company based on the strategic objective.
+    Now, provide the list of JSON objects for our bakery based on the strategic objective.
     """
     response_text = _call_llm_with_retry(llm_client, prompt, "decompose_strategy")
     if response_text:
@@ -233,12 +310,12 @@ def select_final_project_with_llm(llm_client, agent_profile, strategy, combined_
 
 # --- 4. ECOLOGIST AGENT - CONSULTATION ---
 def generate_eco_alternatives_with_llm(llm_client, agent_profile, strategy, initial_ideas):
-    """Acts as an Industrial Ecologist consultant."""
+    """Acts as an Industrial Ecologist consultant specializing in the Singapore Food & Beverage sector."""
     initial_ideas_str = json.dumps(initial_ideas, indent=2)
     prompt = f"""
-    You are an expert in Industrial Ecology. Your purpose is to provide data-driven guidance on sustainable production and consumption.
+    You are an expert in Industrial Ecology and Food Tech, providing advice to a Singaporean bakery.
 
-    **Core Mandate:** Your advice must be informed by data and principles from Life Cycle Assessments (LCA) to guide our company across its full value chain. The ultimate goals are to **minimize waste generation** and **optimize resource usage**.
+    **Core Mandate:** Your advice must be informed by LCA principles to guide the bakery towards minimizing waste and optimizing resource usage. You must consider Singapore's unique context: import dependency, high operational costs, and the government's '30 by 30' food security goal.
 
     **Our Company Profile:**
     - Business Model: "{agent_profile.static_status['business_model']}"
@@ -249,10 +326,10 @@ def generate_eco_alternatives_with_llm(llm_client, agent_profile, strategy, init
     {initial_ideas_str}
 
     **Your Task:**
-    1. Analyze our initial ideas from a systemic, full value-chain perspective.
-    2. Brainstorm 1-2 NEW, more impactful alternatives based on established Industrial Ecology concepts (e.g., circular economy, industrial symbiosis, dematerialization, biomimicry).
-    3. Format your new ideas as a Python-parseable list of JSON objects, using the exact same structure as our initial ideas.
-    4. Your entire response MUST BE just the raw list, starting with '[' and ending with ']'.
+    1.  Analyze our initial ideas from a local, Singaporean value-chain perspective.
+    2.  Brainstorm 1-2 NEW, more impactful alternatives based on established Industrial Ecology concepts (e.g., industrial symbiosis with local breweries, using insect protein, upcycling waste from other food producers).
+    3.  Format your new ideas as a Python-parseable list of JSON objects, using the exact same structure as our initial ideas.
+    4.  Your entire response MUST BE just the raw list, starting with '[' and ending with ']'.
     """
     response_text = _call_llm_with_retry(llm_client, prompt, "generate_eco_alternatives")
     if response_text:
@@ -262,7 +339,81 @@ def generate_eco_alternatives_with_llm(llm_client, agent_profile, strategy, init
     return []
 
 
-# --- 5. REPORTING MODULE ---
+# --- 5. LCA Agent ---
+
+def fetch_lca_data_from_llm(llm_client, stage, activity):
+    """
+    Asks the LLM to act as a researcher to find a specific emission factor online.
+    """
+    prompt = f"""
+    You are an expert Life Cycle Assessment (LCA) data analyst. Your task is to use your knowledge base (equivalent to searching online databases and reports) to find a specific carbon footprint value.
+
+    **Activity to Research:**
+    - **Stage:** "{stage}"
+    - **Activity:** "{activity}"
+
+    **Instructions:**
+    1.  Find a common, average emission factor for this specific activity.
+    2.  You MUST provide the result in a structured JSON format.
+    3.  Your entire response MUST BE just the raw JSON object, starting with '{{' and ending with '}}'. Do not add any other text or markdown.
+    4.  The JSON object must have these exact keys:
+        - "activity": The activity you researched.
+        - "emissions_per_unit": The numerical value of the emission factor.
+        - "emission_unit": The unit of the emission factor (e.g., "kg CO2e", "ton CO2e", "g CO2e"). BE AS SPECIFIC AS POSSIBLE.
+        - "input_unit": The functional unit for the emission factor (e.g., "ton", "kg", "unit", "vehicle", "ton-km").
+        - "source": A short reference for the data (e.g., "IPCC AR5", "Ecoinvent 3.8", "EPA GREET Model"). If unknown, state "General knowledge".
+
+    **Example Response for "steel production":**
+    {{
+      "activity": "steel_production",
+      "emissions_per_unit": 1.9,
+      "emission_unit": "ton CO2e",
+      "input_unit": "ton",
+      "source": "World Steel Association"
+    }}
+
+    Now, provide the JSON object for the requested activity.
+    """
+    
+    # Use the robust retry logic we built before
+    response_text = _call_llm_with_retry(llm_client, prompt, "fetch_lca_data")
+    if response_text:
+        lca_data = _extract_json_from_llm_response(response_text)
+        if lca_data and "emissions_per_unit" in lca_data:
+            return lca_data
+            
+    # Return None on failure so the agent knows the research was unsuccessful
+    return None
+
+def get_unit_conversion_factor(llm_client, from_unit, to_unit):
+    """
+    Asks the LLM for a numerical factor to convert from one unit to another.
+    e.g., from 'ton' to 'kg', the factor is 1000.
+    """
+    prompt = f"""
+    You are a scientific data conversion utility. Your only job is to provide a single numerical conversion factor.
+
+    Task: Provide the number you would MULTIPLY by to convert a value from '{from_unit}' to '{to_unit}'.
+    
+    - If converting from 'ton' to 'kg', the answer is 1000.
+    - If converting from 'g' to 'kg', the answer is 0.001.
+    - If converting from 'item' or 'vehicle' to 'kg', provide the average mass of one '{from_unit}' in kilograms.
+    - If the units are incompatible or you cannot find a factor, respond with 'None'.
+
+    Respond with ONLY the numerical value or the word 'None'.
+    """
+    response_text = _call_llm_with_retry(llm_client, prompt, "get_unit_conversion")
+    if response_text:
+        try:
+            # Try to convert the response to a float
+            return float(response_text)
+        except (ValueError, TypeError):
+            # If it fails (e.g., the response is 'None' or other text), return None
+            print(f"Warning: Could not determine conversion factor from '{from_unit}' to '{to_unit}'.")
+            return None
+    return None
+
+# --- 6. REPORTING MODULE ---
 
 def generate_summary_report_with_llm(llm_client, scenario_name, agent_id, business_model, initial_status_str, final_status_str, full_history_str, total_co2_str):
     """Asks the LLM to act as an analyst and generate a narrative summary of the simulation."""
@@ -296,7 +447,11 @@ def generate_summary_report_with_llm(llm_client, scenario_name, agent_id, busine
        - Explain *why* these changes occurred.
        - Reference specific environmental events and the agent's own actions to create a clear cause-and-effect narrative.
 
-    **4. Strategic Takeaway:**
+    **4. Environmental Impact:**
+        - Summarize the agent's overall carbon footprint in a single sentence.
+        - Highlight any particularly impactful actions or projects that contributed to this footprint.
+    
+    **5. Strategic Takeaway:**
        - Conclude with a single, actionable recommendation for the agent's leadership team.
 
     Write the report in a clear, professional, and analytical tone.
@@ -305,3 +460,50 @@ def generate_summary_report_with_llm(llm_client, scenario_name, agent_id, busine
     if response_text:
         return response_text
     return "Error: Could not generate the final report due to an API failure."
+
+def generate_data_driven_report_with_llm(llm_client, scenario_name, data_table, agent_list_a, agent_list_b):
+    """
+    Writes a data-intensive executive summary, including an analysis
+    of the generated agents in each economy.
+    """
+    prompt = f"""
+    You are a macro-level Economic Strategist and Sustainability Analyst for a global institution like the World Bank. Your task is to analyze a multi-agent simulation comparing two economic models.
+
+    **SCENARIO:** {scenario_name}
+
+    **QUANTITATIVE DATA SUMMARY:**
+    {data_table}
+
+    **PARTICIPATING AGENTS IN EACH ECONOMY:**
+
+    **Economy A (Linear):**
+    {agent_list_a}
+
+    **Economy B (Circular):**
+    {agent_list_b}
+
+    ---
+    **INSTRUCTIONS:**
+    Write a compelling analysis for policymakers. You MUST use the data from ALL tables above to justify every point. Structure your report with these exact headings:
+
+    **1. Macroeconomic Verdict:**
+       - Declare the winning economic model.
+
+    **2. Analysis of Systemic Resilience:**
+       - Analyze *why* the winning economy was more resilient by referencing the specific final values for 'Profit Margin' and 'Cash Flow' from the quantitative table.
+
+    **3. The Role of the Ecosystem:**
+       - **Look at the agent lists.** Contrast the *types* of agents that were generated for each economy (e.g., 'Okara Upcycling Co-op' vs. 'Global Wheat Importer').
+       - Explain how the nature of the ecosystem directly contributed to the resilience and outcomes shown in the data table.
+
+    **4. The Economic Case for Sustainability:**
+       - Compare the 'Total CO2 Footprint' and 'ESG Performance' values from the table.
+       - Link the winning model's lower footprint to its more stable, localized, and innovative ecosystem of agents.
+
+    **5. Policy Recommendation:**
+       - Conclude with a powerful, one-sentence policy recommendation, justified by the quantitative outcomes and the qualitative differences in the generated economic ecosystems.
+    """
+    response_text = _call_llm_with_retry(llm_client, prompt, "generate_data_driven_report")
+    if response_text:
+        return response_text
+    return "Error: Could not generate the final data-driven report due to an API failure."
