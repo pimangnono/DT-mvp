@@ -15,7 +15,11 @@
 4-3. reasoning_engine.py: Contains the agent's NeedsModel, allowing it to identify its most urgent internal priority.
   
 4-4. initial_profiles.json: A data file containing the "seed" agents that kickstart the Genesis Phase for each economy.
+
 5. environment.py (The World State): A passive state manager. It loads a scenario from a JSON file, keeps track of the simulation's clock, and manages global variables like material prices. It is "dumb" by design, only reporting which events are scheduled for the current step.
+
 6. event_handlers.py (The Rulebook): A completely decoupled module that contains the logic for what to do when an event occurs. It maps event type strings from the scenario files to specific Python functions (handle_price_change, handle_carbon_tax), making the system incredibly easy to extend with new events.
+
 7. scenarios/ (The Story Files): A directory of JSON files, each defining a complete narrative with a timeline, initial conditions, and timed events (e.g., supply shocks, carbon taxes). This allows for running different experiments without changing any Python code.
+
 8. reporting.py (The Analyst): Contains all logic for generating the final, data-intensive comparative report. It builds markdown tables and uses a specialized LLM prompt to create a narrative analysis grounded in the quantitative results.
