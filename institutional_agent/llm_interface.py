@@ -388,14 +388,16 @@ def brainstorm_lifecycle_stages_with_llm(llm_client, project_name, context):
     print("LLM Failure: Could not brainstorm valid lifecycle stages.")
     return None
 
+# institutional_agent/llm_interface.py
+
 def quantify_lifecycle_stage_with_llm(llm_client, stage_name, output_flow, context):
     """
     Step 2 of the chain: Takes a single lifecycle stage and asks the LLM
-    to create a quantified recipe (inputs and outputs) for it.
+    to create a quantified recipe, now WITH A RATIONALE FOR EACH FLOW.
     """
     context_str = json.dumps(context, indent=2)
     prompt = f"""
-    You are a Life Cycle Assessment (LCA) data engineer. Your task is to create a quantified process recipe for a single lifecycle stage.
+    You are a Life Cycle Assessment (LCA) data engineer. Your task is to create a detailed and justified process recipe for a single lifecycle stage.
 
     **Lifecycle Stage to Model:** "{stage_name}"
     **Main Output of this Stage:** "{output_flow}"
@@ -403,31 +405,22 @@ def quantify_lifecycle_stage_with_llm(llm_client, stage_name, output_flow, conte
     {context_str}
 
     **Instructions:**
-    1.  Based on the project context and assumptions, create a plausible recipe for this specific stage.
-    2.  Identify the key inputs (materials or energy) required to produce the main output.
-    3.  Estimate the quantities for all inputs and the main output. **You MUST use the assumptions provided in the context to make your estimates.**
+    1.  Based on the project context, create a plausible recipe for this stage.
+    2.  For the output AND every single input, you MUST provide a "rationale" key.
+    3.  The rationale must explain **why you chose this specific flow name** (e.g., "This is the most common virgin material for this process") and **how you estimated its amount** (e.g., "Based on the 1,610 kg total waste assumption"). This is the most critical instruction.
     4.  You MUST respond with a single JSON object with "name", "output", and "inputs" keys.
-    5.  "output" should be an object with "flow_name", "amount", and "unit".
-    6.  "inputs" should be a list of objects, each with "flow_name", "amount", and "unit".
-
-    **Example Response for "PET Granulate Production":**
-    {{
-      "name": "PET Granulate Production",
-      "output": {{ "flow_name": "PET granulate, virgin", "amount": 1610, "unit": "kg" }},
-      "inputs": [
-        {{ "flow_name": "Crude oil", "amount": 3059, "unit": "kg" }},
-        {{ "flow_name": "Electricity, medium voltage", "amount": 1200, "unit": "kWh" }}
-      ]
-    }}
+    5.  "output" must be an object with "flow_name", "amount", "unit", and "rationale".
+    6.  "inputs" must be a list of objects, each with "flow_name", "amount", "unit", and "rationale".
     """
     response_text = _call_llm_with_retry(llm_client, prompt, f"quantify_stage_{stage_name}")
     if response_text:
         recipe = _extract_json_from_llm_response(response_text)
-        if isinstance(recipe, dict) and "inputs" in recipe and "output" in recipe:
+        if (isinstance(recipe, dict) and "inputs" in recipe and "output" in recipe and
+                "rationale" in recipe["output"] and
+                all("rationale" in item for item in recipe["inputs"])):
             return recipe
-    print(f"LLM Failure: Could not generate a valid quantified recipe for stage '{stage_name}'.")
+    print(f"LLM Failure: Could not generate a valid quantified recipe with rationales for stage '{stage_name}'.")
     return None
-
 
 # def fetch_lca_data_from_llm(llm_client, stage, activity):
 #     """

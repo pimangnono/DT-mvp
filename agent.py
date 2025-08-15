@@ -204,7 +204,7 @@ class InstitutionalAgent:
         print(f"Effective Strategy set to: '{effective_strategy}'")
         time.sleep(1)
 
-        # 2. **NEW SIMPLIFIED FLOW**: The strategy IS the project to be analyzed.
+        # 2. The strategy IS the project to be analyzed.
         # We assume a default amount/unit for the functional unit of the analysis.
         project_details = {"amount": 1, "unit": "unit"} # Analyze the impact of '1 unit' of this strategy
         
