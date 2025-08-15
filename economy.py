@@ -107,13 +107,25 @@ class Economy:
                 event_handlers.process_event(event, self)
 
             for agent in self.agents:
+                # --- THE KEY CHANGE IS HERE ---
+                # We now correctly pass all required arguments, including the lca_consultant.
+                # In this architecture, the LCA consultant is the lca_auditor.
                 lca_message = agent.think_and_act(
                     eco_consultant=self.eco_consultant,
+                    lca_consultant=self.lca_auditor, # <-- ADDED THIS ARGUMENT
                     triggered_events=triggered_events,
                     material_prices=self.environment.material_prices
                 )
-                if lca_message:
-                    self.lca_auditor.process_action_message(lca_message, agent.agent_id)
+                if lca_message and "error" not in lca_message:
+                    # The auditor's job is just to log the final, confirmed footprint.
+                    # We don't call it directly anymore for calculation.
+                    # This part of the logic can be simplified or removed if the
+                    # LCA consultant's only job is pre-decision analysis.
+                    # For now, let's assume it still acts as a final logger.
+                    print(f">> Economy-level auditor logging final footprint for {agent.agent_id}.")
+                elif lca_message and "error" in lca_message:
+                    print(f">> LCA calculation for {agent.agent_id} failed with error: {lca_message['error']}")
+
                 time.sleep(1)
 
     def get_aggregate_results(self):

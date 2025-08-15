@@ -1,4 +1,18 @@
+# Core simulation and data handling
 numpy
+pandas
+openpyxl
+
+# Google Generative AI
 python-dotenv
 google-generativeai
-paho-mqtt  
+
+# openLCA Integration
+olca-ipc
+olca-schema
+
+# RAG Database & Semantic Search (New Additions)
+psycopg2-binary
+pgvector
+sentence-transformers
+faiss-cpu

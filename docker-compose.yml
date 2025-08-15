@@ -1,0 +1,24 @@
+# docker-compose.yml
+version: '3.8'
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: lca_rag_db
+    environment:
+      - POSTGRES_DB=lca_data
+      - POSTGRES_USER=lca_user
+      - POSTGRES_PASSWORD=lca_password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  pgdata:
+
+
+# image: pgvector/pgvector:pg16: It tells Docker to download and use the official image for PostgreSQL version 16, which already has the PGVector extension pre-installed. This is the easiest way.
+# container_name: Gives your running database a simple name (lca_rag_db).
+# environment: This sets up the database, username, and password when it's created for the first time.
+# volumes: This is important. It creates a persistent storage area named pgdata on your computer. This means that even if you stop and remove the Docker container, your database data will not be lost. The next time you start it, it will reconnect to this storage.
+# ports: This maps port 5432 inside the Docker container to port 5432 on your Mac. This allows your Python script to connect to it as if it were running locally.

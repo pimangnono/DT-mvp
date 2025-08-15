@@ -48,10 +48,12 @@ def _call_llm_with_retry(llm_client, prompt, function_name="LLM Call"):
 
 # --- 0. Ecosystem SETUP ---
 
+# institutional_agent/llm_interface.py
+
 def generate_agent_profile_from_concept(llm_client, economy_type, agent_concept):
     """
-    Takes a simple agent concept (name and business model) and asks the LLM
-    to generate a complete, structured JSON profile for it.
+    Takes a simple agent concept and asks the LLM to generate a complete,
+    structured JSON profile for it with a strictly enforced status dictionary.
     """
     agent_id = agent_concept.get('agent_id', 'Unknown Agent')
     business_model = agent_concept.get('business_model', 'N/A')
@@ -60,6 +62,15 @@ def generate_agent_profile_from_concept(llm_client, economy_type, agent_concept)
         example_supply_chain = '{ "model_type": "linear", "material_mix": { "imported_wheat_flour": 1.0 } }'
     else: # Circular
         example_supply_chain = '{ "model_type": "circular", "material_mix": { "upcycled_sg_ingredients": 1.0 } }'
+
+    # --- NEW: Define the non-negotiable status structure ---
+    required_status_keys = """
+    "cash_flow": 50, "short_term_debt_coverage": 50, "working_capital": 50,
+    "profit_margin": 50, "market_share": 50, "revenue_consistency": 50,
+    "roi": 50, "productivity": 50, "entry_into_new_market": 50,
+    "brand_recognition": 50, "esg_performance": 50, "customer_satisfaction": 50,
+    "vision_alignment_score": 50, "long_term_sustainability": 50
+    """
 
     prompt = f"""
     You are a data entry specialist and economic modeler. Your task is to create a complete JSON data profile for a specific business entity.
@@ -70,21 +81,21 @@ def generate_agent_profile_from_concept(llm_client, economy_type, agent_concept)
     - **Overarching Economy:** "{economy_type}"
 
     **Instructions:**
-    1.  Based on the entity details, create a single, complete JSON object representing this agent's full profile.
+    1.  Based on the entity details, create a single, complete JSON object.
     2.  The JSON object MUST contain these exact top-level keys: "agent_id", "vision_statement", "business_model", "supply_chain", and "initial_status".
     3.  The "supply_chain" value MUST be a nested JSON object structured exactly like this: {example_supply_chain}.
-    4.  The "initial_status" value MUST be a nested JSON object containing a full set of reasonable default metrics (e.g., "cash_flow": 50, "profit_margin": 50, etc.).
+    4.  The "initial_status" value MUST be a nested JSON object. **It is CRITICAL that it contains ALL of the following keys with reasonable default numerical values:**
+        {required_status_keys}
     5.  Your entire response MUST BE just the raw JSON object, starting with '{{' and ending with '}}'. Do not add any other text.
     """
     response_text = _call_llm_with_retry(llm_client, prompt, f"generate_profile_for_{agent_id}")
     if response_text:
         profile = _extract_json_from_llm_response(response_text)
-        if isinstance(profile, dict) and "agent_id" in profile:
+        # Add a check for the crucial key
+        if isinstance(profile, dict) and isinstance(profile.get("initial_status"), dict) and "profit_margin" in profile["initial_status"]:
             return profile
-    print(f"LLM Failure: Could not generate a valid profile for concept '{agent_id}'.")
+    print(f"LLM Failure: Could not generate a valid profile with all required status keys for concept '{agent_id}'.")
     return None
-
-# llm_interface.py
 
 def generate_ecosystem_concepts_with_llm(llm_client, economy_type, core_business_model):
     """
@@ -340,78 +351,198 @@ def generate_eco_alternatives_with_llm(llm_client, agent_profile, strategy, init
 
 
 # --- 5. LCA Agent ---
+# institutional_agent/llm_interface.py
 
-def fetch_lca_data_from_llm(llm_client, stage, activity):
+def brainstorm_lifecycle_stages_with_llm(llm_client, project_name, context):
     """
-    Asks the LLM to act as a researcher to find a specific emission factor online.
+    Step 1 of the chain: Asks the LLM to identify the key lifecycle stages
+    and the main product flow for each stage.
     """
+    context_str = json.dumps(context, indent=2)
     prompt = f"""
-    You are an expert Life Cycle Assessment (LCA) data analyst. Your task is to use your knowledge base (equivalent to searching online databases and reports) to find a specific carbon footprint value.
+    You are a senior Life Cycle Assessment (LCA) practitioner. Your first task is to define the lifecycle model for a given scenario.
 
-    **Activity to Research:**
-    - **Stage:** "{stage}"
-    - **Activity:** "{activity}"
+    **Project:** "{project_name}"
+    **Context (Goal, Scope, Assumptions):**
+    {context_str}
 
     **Instructions:**
-    1.  Find a common, average emission factor for this specific activity.
-    2.  You MUST provide the result in a structured JSON format.
-    3.  Your entire response MUST BE just the raw JSON object, starting with '{{' and ending with '}}'. Do not add any other text or markdown.
-    4.  The JSON object must have these exact keys:
-        - "activity": The activity you researched.
-        - "emissions_per_unit": The numerical value of the emission factor.
-        - "emission_unit": The unit of the emission factor (e.g., "kg CO2e", "ton CO2e", "g CO2e"). BE AS SPECIFIC AS POSSIBLE.
-        - "input_unit": The functional unit for the emission factor (e.g., "ton", "kg", "unit", "vehicle", "ton-km").
-        - "source": A short reference for the data (e.g., "IPCC AR5", "Ecoinvent 3.8", "EPA GREET Model"). If unknown, state "General knowledge".
+    1.  Based on the project scope, identify the 2-4 key lifecycle stages that must be modeled (e.g., "Raw Material Production", "Transportation", "Waste Treatment").
+    2.  For each stage, identify the single primary output product or service flow.
+    3.  Respond with ONLY a single JSON object. It must have one key: "stages".
+    4.  "stages" should be a list of objects, each with "stage_name" and "output_flow".
 
-    **Example Response for "steel production":**
+    **Example for "Manufacturing PET Bottles":**
     {{
-      "activity": "steel_production",
-      "emissions_per_unit": 1.9,
-      "emission_unit": "ton CO2e",
-      "input_unit": "ton",
-      "source": "World Steel Association"
+      "stages": [
+        {{ "stage_name": "PET Granulate Production", "output_flow": "PET granulate, virgin" }},
+        {{ "stage_name": "PET Bottle Production", "output_flow": "Bottle, polyethylene terephthalate" }}
+      ]
     }}
-
-    Now, provide the JSON object for the requested activity.
     """
-    
-    # Use the robust retry logic we built before
-    response_text = _call_llm_with_retry(llm_client, prompt, "fetch_lca_data")
+    response_text = _call_llm_with_retry(llm_client, prompt, "brainstorm_lifecycle_stages")
     if response_text:
-        lca_data = _extract_json_from_llm_response(response_text)
-        if lca_data and "emissions_per_unit" in lca_data:
-            return lca_data
-            
-    # Return None on failure so the agent knows the research was unsuccessful
+        concepts = _extract_json_from_llm_response(response_text)
+        if isinstance(concepts, dict) and "stages" in concepts:
+            return concepts
+    print("LLM Failure: Could not brainstorm valid lifecycle stages.")
     return None
 
-def get_unit_conversion_factor(llm_client, from_unit, to_unit):
+def quantify_lifecycle_stage_with_llm(llm_client, stage_name, output_flow, context):
     """
-    Asks the LLM for a numerical factor to convert from one unit to another.
-    e.g., from 'ton' to 'kg', the factor is 1000.
+    Step 2 of the chain: Takes a single lifecycle stage and asks the LLM
+    to create a quantified recipe (inputs and outputs) for it.
     """
+    context_str = json.dumps(context, indent=2)
     prompt = f"""
-    You are a scientific data conversion utility. Your only job is to provide a single numerical conversion factor.
+    You are a Life Cycle Assessment (LCA) data engineer. Your task is to create a quantified process recipe for a single lifecycle stage.
 
-    Task: Provide the number you would MULTIPLY by to convert a value from '{from_unit}' to '{to_unit}'.
-    
-    - If converting from 'ton' to 'kg', the answer is 1000.
-    - If converting from 'g' to 'kg', the answer is 0.001.
-    - If converting from 'item' or 'vehicle' to 'kg', provide the average mass of one '{from_unit}' in kilograms.
-    - If the units are incompatible or you cannot find a factor, respond with 'None'.
+    **Lifecycle Stage to Model:** "{stage_name}"
+    **Main Output of this Stage:** "{output_flow}"
+    **Overall Project Context (Goal, Scope, Assumptions):**
+    {context_str}
 
-    Respond with ONLY the numerical value or the word 'None'.
+    **Instructions:**
+    1.  Based on the project context and assumptions, create a plausible recipe for this specific stage.
+    2.  Identify the key inputs (materials or energy) required to produce the main output.
+    3.  Estimate the quantities for all inputs and the main output. **You MUST use the assumptions provided in the context to make your estimates.**
+    4.  You MUST respond with a single JSON object with "name", "output", and "inputs" keys.
+    5.  "output" should be an object with "flow_name", "amount", and "unit".
+    6.  "inputs" should be a list of objects, each with "flow_name", "amount", and "unit".
+
+    **Example Response for "PET Granulate Production":**
+    {{
+      "name": "PET Granulate Production",
+      "output": {{ "flow_name": "PET granulate, virgin", "amount": 1610, "unit": "kg" }},
+      "inputs": [
+        {{ "flow_name": "Crude oil", "amount": 3059, "unit": "kg" }},
+        {{ "flow_name": "Electricity, medium voltage", "amount": 1200, "unit": "kWh" }}
+      ]
+    }}
     """
-    response_text = _call_llm_with_retry(llm_client, prompt, "get_unit_conversion")
+    response_text = _call_llm_with_retry(llm_client, prompt, f"quantify_stage_{stage_name}")
     if response_text:
-        try:
-            # Try to convert the response to a float
-            return float(response_text)
-        except (ValueError, TypeError):
-            # If it fails (e.g., the response is 'None' or other text), return None
-            print(f"Warning: Could not determine conversion factor from '{from_unit}' to '{to_unit}'.")
-            return None
+        recipe = _extract_json_from_llm_response(response_text)
+        if isinstance(recipe, dict) and "inputs" in recipe and "output" in recipe:
+            return recipe
+    print(f"LLM Failure: Could not generate a valid quantified recipe for stage '{stage_name}'.")
     return None
+
+
+# def fetch_lca_data_from_llm(llm_client, stage, activity):
+#     """
+#     Asks the LLM to act as a researcher to find a specific emission factor online.
+#     """
+#     prompt = f"""
+#     You are an expert Life Cycle Assessment (LCA) data analyst. Your task is to use your knowledge base (equivalent to searching online databases and reports) to find a specific carbon footprint value.
+
+#     **Activity to Research:**
+#     - **Stage:** "{stage}"
+#     - **Activity:** "{activity}"
+
+#     **Instructions:**
+#     1.  Find a common, average emission factor for this specific activity.
+#     2.  You MUST provide the result in a structured JSON format.
+#     3.  Your entire response MUST BE just the raw JSON object, starting with '{{' and ending with '}}'. Do not add any other text or markdown.
+#     4.  The JSON object must have these exact keys:
+#         - "activity": The activity you researched.
+#         - "emissions_per_unit": The numerical value of the emission factor.
+#         - "emission_unit": The unit of the emission factor (e.g., "kg CO2e", "ton CO2e", "g CO2e"). BE AS SPECIFIC AS POSSIBLE.
+#         - "input_unit": The functional unit for the emission factor (e.g., "ton", "kg", "unit", "vehicle", "ton-km").
+#         - "source": A short reference for the data (e.g., "IPCC AR5", "Ecoinvent 3.8", "EPA GREET Model"). If unknown, state "General knowledge".
+
+#     **Example Response for "steel production":**
+#     {{
+#       "activity": "steel_production",
+#       "emissions_per_unit": 1.9,
+#       "emission_unit": "ton CO2e",
+#       "input_unit": "ton",
+#       "source": "World Steel Association"
+#     }}
+
+#     Now, provide the JSON object for the requested activity.
+#     """
+    
+#     # Use the robust retry logic we built before
+#     response_text = _call_llm_with_retry(llm_client, prompt, "fetch_lca_data")
+#     if response_text:
+#         lca_data = _extract_json_from_llm_response(response_text)
+#         if lca_data and "emissions_per_unit" in lca_data:
+#             return lca_data
+            
+#     # Return None on failure so the agent knows the research was unsuccessful
+#     return None
+
+# def get_unit_conversion_factor(llm_client, from_unit, to_unit):
+#     """
+#     Asks the LLM for a numerical factor to convert from one unit to another.
+#     e.g., from 'ton' to 'kg', the factor is 1000.
+#     """
+#     prompt = f"""
+#     You are a scientific data conversion utility. Your only job is to provide a single numerical conversion factor.
+
+#     Task: Provide the number you would MULTIPLY by to convert a value from '{from_unit}' to '{to_unit}'.
+    
+#     - If converting from 'ton' to 'kg', the answer is 1000.
+#     - If converting from 'g' to 'kg', the answer is 0.001.
+#     - If converting from 'item' or 'vehicle' to 'kg', provide the average mass of one '{from_unit}' in kilograms.
+#     - If the units are incompatible or you cannot find a factor, respond with 'None'.
+
+#     Respond with ONLY the numerical value or the word 'None'.
+#     """
+#     response_text = _call_llm_with_retry(llm_client, prompt, "get_unit_conversion")
+#     if response_text:
+#         try:
+#             # Try to convert the response to a float
+#             return float(response_text)
+#         except (ValueError, TypeError):
+#             # If it fails (e.g., the response is 'None' or other text), return None
+#             print(f"Warning: Could not determine conversion factor from '{from_unit}' to '{to_unit}'.")
+#             return None
+#     return None
+
+# llm_interface.py
+
+def make_final_decision_with_lca_data(llm_client, agent_profile, project, lca_result):
+    """
+    Acts as a CEO making a final go/no-go decision based on a project's
+    strategic fit and its calculated environmental impact.
+    """
+    lca_result_str = json.dumps(lca_result, indent=2)
+    project_str = json.dumps(project, indent=2)
+    
+    prompt = f"""
+    You are the CEO. You must make a final, binding GO/NO-GO decision on a project.
+
+    **Our Company Profile:**
+    - **Vision:** "{agent_profile.static_status['vision_statement']}"
+    - **Current ESG Performance Score:** {agent_profile.dynamic_status['esg_performance']}
+
+    **Proposed Project:**
+    {project_str}
+
+    **Scientific Environmental Impact Assessment (from openLCA):**
+    {lca_result_str}
+
+    **Instructions:**
+    1.  Review the project and its scientifically calculated carbon footprint (`total_kg_co2e`).
+    2.  Balance the project's strategic goals against our vision and current ESG score.
+    3.  Make a final decision: "Approve" or "Reject".
+    4.  Provide a brief, one-sentence rationale for your decision.
+    5.  Respond with ONLY a single, raw JSON object with the keys "decision" and "reasoning".
+
+    **Example Response:**
+    {{
+      "decision": "Approve",
+      "reasoning": "Although the carbon footprint is non-zero, the strategic benefit of upgrading our ovens aligns with our long-term efficiency goals."
+    }}
+    """
+    response_text = _call_llm_with_retry(llm_client, prompt, "make_final_decision")
+    if response_text:
+        decision = _extract_json_from_llm_response(response_text)
+        if decision and "decision" in decision:
+            return decision
+    return {"decision": "Reject", "reasoning": "Could not make a confident decision due to a analysis error."}
 
 # --- 6. REPORTING MODULE ---
 
