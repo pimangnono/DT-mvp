@@ -388,38 +388,52 @@ def brainstorm_lifecycle_stages_with_llm(llm_client, project_name, context):
     print("LLM Failure: Could not brainstorm valid lifecycle stages.")
     return None
 
-# institutional_agent/llm_interface.py
-
 def quantify_lifecycle_stage_with_llm(llm_client, stage_name, output_flow, context):
     """
-    Step 2 of the chain: Takes a single lifecycle stage and asks the LLM
-    to create a quantified recipe, now WITH A RATIONALE FOR EACH FLOW.
+    Step 2 of the chain: Takes a single lifecycle stage and asks the LLM to create a
+    quantified recipe, now with a dedicated 'emissions' list for elementary outputs.
     """
     context_str = json.dumps(context, indent=2)
     prompt = f"""
-    You are a Life Cycle Assessment (LCA) data engineer. Your task is to create a detailed and justified process recipe for a single lifecycle stage.
+    You are an expert Life Cycle Assessment (LCA) data engineer. Your task is to create a scientifically plausible, quantified process recipe for a single lifecycle stage.
 
     **Lifecycle Stage to Model:** "{stage_name}"
-    **Main Output of this Stage:** "{output_flow}"
+    **Main Product/Service Output of this Stage:** "{output_flow}"
     **Overall Project Context (Goal, Scope, Assumptions):**
     {context_str}
 
-    **Instructions:**
-    1.  Based on the project context, create a plausible recipe for this stage.
-    2.  For the output AND every single input, you MUST provide a "rationale" key.
-    3.  The rationale must explain **why you chose this specific flow name** (e.g., "This is the most common virgin material for this process") and **how you estimated its amount** (e.g., "Based on the 1,610 kg total waste assumption"). This is the most critical instruction.
-    4.  You MUST respond with a single JSON object with "name", "output", and "inputs" keys.
-    5.  "output" must be an object with "flow_name", "amount", "unit", and "rationale".
-    6.  "inputs" must be a list of objects, each with "flow_name", "amount", "unit", and "rationale".
+    **CRITICAL INSTRUCTIONS:**
+    1.  Based on the project context, create a recipe for this stage.
+    2.  Identify the **technosphere inputs** (materials or energy from other industrial processes).
+    3.  Identify the **elementary flow outputs** (emissions to air, water, soil). For any combustion or chemical process, this MUST include "Carbon dioxide, fossil".
+    4.  You MUST respond with a single JSON object with "name", "output", "inputs", and "emissions" keys.
+    5.  "output" is the main product/service of this process.
+    6.  "inputs" is a list of the technosphere inputs.
+    7.  "emissions" is a list of the elementary flow outputs.
+    8.  Every flow object must include a "rationale" explaining your choice of flow and quantity.
+
+    **Example for "Incineration of 1610 kg of Plastic Waste":**
+    {{
+      "name": "Waste Incineration Process",
+      "output": {{
+        "flow_name": "Waste heat, for district heating", "amount": 5000, "unit": "MJ", "rationale":"Represents the useful service of energy recovery."
+      }},
+      "inputs": [
+        {{ "flow_name": "Plastic, waste, post-consumer, polypropylene", "amount": 1610, "unit": "kg", "rationale": "The material being treated, based on the 1,610 kg total waste assumption." }}
+      ],
+      "emissions": [
+        {{ "flow_name": "Carbon dioxide, fossil", "amount": 4700, "unit": "kg", "rationale": "Primary GHG emission from combustion of fossil-based plastic (PP is ~86% carbon by mass)." }},
+        {{ "flow_name": "Methane, fossil", "amount": 0.5, "unit": "kg", "rationale": "Represents incomplete combustion." }}
+      ]
+    }}
     """
     response_text = _call_llm_with_retry(llm_client, prompt, f"quantify_stage_{stage_name}")
     if response_text:
         recipe = _extract_json_from_llm_response(response_text)
-        if (isinstance(recipe, dict) and "inputs" in recipe and "output" in recipe and
-                "rationale" in recipe["output"] and
-                all("rationale" in item for item in recipe["inputs"])):
+        # Check for the new, correct structure
+        if isinstance(recipe, dict) and "inputs" in recipe and "output" in recipe and "emissions" in recipe:
             return recipe
-    print(f"LLM Failure: Could not generate a valid quantified recipe with rationales for stage '{stage_name}'.")
+    print(f"LLM Failure: Could not generate a valid quantified recipe with emissions for stage '{stage_name}'.")
     return None
 
 # def fetch_lca_data_from_llm(llm_client, stage, activity):
